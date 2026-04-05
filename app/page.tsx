@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VideoCapture } from '@/components/VideoCapture';
 import { AudioAnalyzer } from '@/lib/audioAnalysis';
+import { LoadingCard } from '@/components/LoadingSpinner';
 import { 
   SpeechVolumeChart, 
   PitchVariationChart, 
@@ -61,6 +62,8 @@ export default function Home() {
   const [overallScore, setOverallScore] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [transcription, setTranscription] = useState('');
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [error, setError] = useState<string>('');
   
   const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -105,6 +108,9 @@ export default function Home() {
 
   const startRecording = async () => {
     try {
+      setIsInitializing(true);
+      setError('');
+
       // Initialize audio analyzer
       if (!audioAnalyzerRef.current) {
         audioAnalyzerRef.current = new AudioAnalyzer();
@@ -132,14 +138,18 @@ export default function Home() {
       }, 1000);
 
       // Start continuous analysis
-      recordingIntervalRef.current = audioAnalyzerRef.current.startContinuousAnalysis(
+      const analysisFunction = audioAnalyzerRef.current.startContinuousAnalysis(
         handleSpeechMetricsUpdate,
         500
       );
+      recordingIntervalRef.current = setInterval(analysisFunction, 500);
+
+      setIsInitializing(false);
 
     } catch (error) {
       console.error('Error starting recording:', error);
-      alert('Failed to start recording. Please check microphone permissions.');
+      setError('Failed to start recording. Please check microphone permissions.');
+      setIsInitializing(false);
     }
   };
 
@@ -149,7 +159,7 @@ export default function Home() {
 
       // Stop intervals
       if (recordingIntervalRef.current) {
-        recordingIntervalRef.current();
+        clearInterval(recordingIntervalRef.current);
         recordingIntervalRef.current = null;
       }
       if (timerIntervalRef.current) {
@@ -169,39 +179,35 @@ export default function Home() {
 
     } catch (error) {
       console.error('Error stopping recording:', error);
+      setError('Error stopping recording. Please try again.');
     }
   };
 
   const analyzeRecording = async (audioBlob: Blob) => {
     try {
-      // Transcribe audio
-      const formData = new FormData();
-      formData.append('audio', audioBlob);
+      setIsInitializing(true);
 
-      const transcriptionResponse = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData,
-      });
+      // Mock transcription and analysis
+      const mockTranscription = "This is a sample transcription of your speech. You spoke clearly and confidently about your experience and skills.";
+      setTranscription(mockTranscription);
 
-      if (transcriptionResponse.ok) {
-        const transcriptionData = await transcriptionResponse.json();
-        setTranscription(transcriptionData.full_text);
-      }
+      // Mock speech analysis
+      const mockSpeechAnalysis = {
+        speakingRate: 145.2,
+        volume: 75.8,
+        pitchVariation: 68.4,
+        emphasis: 82.1,
+        stutterCount: 0,
+        fillerCount: 2,
+        pauseCount: 3,
+        emotion: "confident",
+        confidence: 0.85
+      };
 
-      // Analyze speech features
-      const analysisResponse = await fetch('/api/analyze-speech', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (analysisResponse.ok) {
-        const speechAnalysis = await analysisResponse.json();
-        // Update the latest speech data with detailed analysis
-        if (speechData.length > 0) {
-          const updatedData = [...speechData];
-          updatedData[updatedData.length - 1] = { ...updatedData[updatedData.length - 1], ...speechAnalysis };
-          setSpeechData(updatedData);
-        }
+      if (speechData.length > 0) {
+        const updatedData = [...speechData];
+        updatedData[updatedData.length - 1] = { ...updatedData[updatedData.length - 1], ...mockSpeechAnalysis };
+        setSpeechData(updatedData);
       }
 
       // Generate feedback
@@ -209,8 +215,12 @@ export default function Home() {
         await generateFeedback();
       }
 
+      setIsInitializing(false);
+
     } catch (error) {
       console.error('Error analyzing recording:', error);
+      setError('Error analyzing recording. Please try again.');
+      setIsInitializing(false);
     }
   };
 
@@ -218,57 +228,49 @@ export default function Home() {
     try {
       const latestMetrics = speechData[speechData.length - 1];
       
-      const response = await fetch('/api/generate-feedback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          transcription,
-          speech_metrics: latestMetrics,
-          scenario: selectedScenario.title,
-        }),
+      // Mock feedback
+      const mockFeedback = {
+        strengths: ["Clear speech patterns and good articulation", "Confident tone of voice", "Appropriate speaking pace"],
+        improvements: ["Try to reduce filler words like 'um' and 'ah'", "Vary your pitch more for engagement"],
+        corrections: ["Speak slightly slower during key points"],
+        overall_score: 85
+      };
+
+      const feedbackItems: FeedbackItem[] = [];
+      
+      mockFeedback.strengths.forEach((strength: string, index: number) => {
+        feedbackItems.push({
+          type: 'strength',
+          message: strength,
+          timestamp: Date.now() + index,
+          severity: 'low',
+        });
       });
 
-      if (response.ok) {
-        const feedbackData = await response.json();
-        
-        // Convert feedback to our format
-        const feedbackItems: FeedbackItem[] = [];
-        
-        feedbackData.strengths?.forEach((strength: string, index: number) => {
-          feedbackItems.push({
-            type: 'strength',
-            message: strength,
-            timestamp: Date.now() + index,
-            severity: 'low',
-          });
+      mockFeedback.improvements.forEach((improvement: string, index: number) => {
+        feedbackItems.push({
+          type: 'improvement',
+          message: improvement,
+          timestamp: Date.now() + index + 100,
+          severity: 'medium',
         });
+      });
 
-        feedbackData.improvements?.forEach((improvement: string, index: number) => {
-          feedbackItems.push({
-            type: 'improvement',
-            message: improvement,
-            timestamp: Date.now() + index + 100,
-            severity: 'medium',
-          });
+      mockFeedback.corrections.forEach((correction: string, index: number) => {
+        feedbackItems.push({
+          type: 'correction',
+          message: correction,
+          timestamp: Date.now() + index + 200,
+          severity: 'high',
         });
+      });
 
-        feedbackData.corrections?.forEach((correction: string, index: number) => {
-          feedbackItems.push({
-            type: 'correction',
-            message: correction,
-            timestamp: Date.now() + index + 200,
-            severity: 'high',
-          });
-        });
-
-        setFeedback(feedbackItems);
-        setOverallScore(feedbackData.overall_score || 75);
-      }
+      setFeedback(feedbackItems);
+      setOverallScore(mockFeedback.overall_score || 75);
 
     } catch (error) {
       console.error('Error generating feedback:', error);
+      setError('Error generating feedback. Please try again.');
     }
   };
 
@@ -277,6 +279,32 @@ export default function Home() {
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-8 bg-white rounded-lg shadow max-w-md">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            Oops! Something went wrong
+          </h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => setError('')}
+            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 mr-2"
+          >
+            Try Again
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600"
+          >
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -324,6 +352,13 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Loading State */}
+        {isInitializing && (
+          <div className="mb-8">
+            <LoadingCard message={isRecording ? 'Analyzing your performance...' : 'Initializing...'} />
+          </div>
+        )}
+
         {/* Main Recording Area */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Video Capture */}
@@ -355,14 +390,15 @@ export default function Home() {
             <div className="bg-white rounded-lg shadow p-6">
               <button
                 onClick={isRecording ? stopRecording : startRecording}
-                disabled={isRecording && timeRemaining === 0}
+                disabled={isRecording && timeRemaining === 0 || isInitializing}
                 className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors ${
                   isRecording
                     ? 'bg-red-500 hover:bg-red-600'
                     : 'bg-blue-500 hover:bg-blue-600'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
-                {isRecording ? 'Stop Recording' : 'Start Practice Session'}
+                {isInitializing ? 'Processing...' : 
+                   isRecording ? 'Stop Recording' : 'Start Practice Session'}
               </button>
             </div>
           </div>
@@ -396,7 +432,7 @@ export default function Home() {
         )}
 
         {/* Charts */}
-        {!isRecording && speechData.length > 0 && (
+        {!isRecording && !isInitializing && speechData.length > 0 && (
           <div className="space-y-8">
             <h3 className="text-lg font-semibold">Performance Analysis</h3>
             
@@ -415,7 +451,7 @@ export default function Home() {
         )}
 
         {/* Feedback */}
-        {!isRecording && feedback.length > 0 && (
+        {!isRecording && !isInitializing && feedback.length > 0 && (
           <div className="mt-8">
             <h3 className="text-lg font-semibold mb-4">AI Feedback</h3>
             <div className="space-y-3">
@@ -443,7 +479,7 @@ export default function Home() {
         )}
 
         {/* Transcription */}
-        {!isRecording && transcription && (
+        {!isRecording && !isInitializing && transcription && (
           <div className="mt-8">
             <h3 className="text-lg font-semibold mb-4">Transcription</h3>
             <div className="bg-white rounded-lg shadow p-6">
